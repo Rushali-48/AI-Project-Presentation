@@ -1,0 +1,28 @@
+# Core / Frontend
+streamlit
+python-dotenv
+requests
+
+# Backend API
+fastapi
+uvicorn
+
+# Data / Image Processing
+numpy
+pandas
+opencv-python
+Pillow
+ImageHash
+
+# OCR
+easyocr
+
+# RAG / Embeddings / Vector Search
+sentence-transformers
+faiss-cpu
+
+# Groq - LLM + Speech-to-Text
+groq
+
+# Audio
+soundfile

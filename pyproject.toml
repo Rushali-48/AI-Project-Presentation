@@ -1,0 +1,18 @@
+[tool.ruff]
+line-length = 88
+exclude = [
+    ".venv",
+    "venv",
+    "__pycache__",
+    "*.md",
+    "*.txt",
+    "docs/"
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
