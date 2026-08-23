@@ -134,6 +134,31 @@ Rules:
 @app.post("/transcribe")
 async def transcribe_audio(file: UploadFile = File(...)):
 
+    # Whisper is known to hallucinate stock captioning phrases when fed
+    # short or near-silent audio (e.g. pauses between sentences). The
+    # client already skips tiny audio blobs before sending, but this is
+    # a second safety net: drop the transcript if it's just one of these
+    # well-known boilerplate hallucinations and nothing else.
+    HALLUCINATED_PHRASES = {
+        "thank you.",
+        "thank you",
+        "thanks for watching",
+        "thanks for watching!",
+        "i'm going to go to the next one.",
+        "i'm going to go to the next one",
+        "i'm going to go to the next slide.",
+        "i'm going to go to the next slide",
+        "i'm going to go to the next video.",
+        "i'm going to go to the next video",
+        "i'm going to go ahead and get some more.",
+        "i'm going to go ahead and get some more",
+        "i'm going to go ahead and get started.",
+        "okay.",
+        "yes.",
+        ".",
+        "...",
+    }
+
     try:
         audio_bytes = await file.read()
 
@@ -146,6 +171,13 @@ async def transcribe_audio(file: UploadFile = File(...)):
         )
 
         text = transcription.text.strip()
+
+        # Discard known hallucination boilerplate (case-insensitive,
+        # ignoring surrounding punctuation/whitespace).
+        if text.lower().strip() in HALLUCINATED_PHRASES:
+            print("DROPPED (likely hallucination):", text)
+            return {"success": True, "text": ""}
+
         if text:
             rag.add_document(text=text, source_type="speech")
 

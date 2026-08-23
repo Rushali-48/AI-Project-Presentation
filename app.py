@@ -1,6 +1,7 @@
 import streamlit as st
 from screen_share import screen_share
 import base64
+import time
 from io import BytesIO
 from PIL import Image
 import imagehash
@@ -51,6 +52,9 @@ if "final_evaluation_started" not in st.session_state:
 
 if "interview_prepared" not in st.session_state:
     st.session_state.interview_prepared = False
+
+if "interview_started" not in st.session_state:
+    st.session_state.interview_started = False
 
 if "interview_history" not in st.session_state:
     st.session_state.interview_history = []
@@ -250,6 +254,7 @@ if st.session_state.stage == "ready":
             st.session_state.final_evaluation_started = False
             st.session_state.final_evaluation = None
             st.session_state.interview_prepared = False
+            st.session_state.interview_started = False
             st.session_state.is_new_screen = False
             st.session_state.latest_screen = None
 
@@ -361,10 +366,10 @@ elif st.session_state.stage == "presenting":
         # =========================================
 
         if st.session_state.is_new_screen:
-            st.success("🆕 New screen detected — ready for OCR")
+            st.success("🆕 New screen detected")
 
         else:
-            st.info("🔁 Duplicate screen — OCR skipped")
+            st.info("🔁 Duplicate screen — skipped")
 
         st.caption(f"Unique screens detected: {st.session_state.unique_screen_count}")
 
@@ -514,16 +519,13 @@ elif st.session_state.stage == "presenting":
         use_container_width=True,
         type="primary",
     ):
-        # From this click onward the presentation capture and microphone
-        # are no longer rendered. Prepare the interview exactly once.
         try:
             if st.session_state.latest_screen is None:
                 st.error("Please share your presentation screen before finishing.")
                 st.stop()
 
-            # Switch to interview screen immediately
             st.session_state.stage = "interviewing"
-
+            st.session_state.interview_started = False
             st.rerun()
 
         except Exception as e:
@@ -535,40 +537,134 @@ elif st.session_state.stage == "presenting":
 # ============================================================
 
 elif st.session_state.stage == "interviewing":
+    if "interview_started" not in st.session_state:
+        st.session_state.interview_started = False
+
+    if not st.session_state.interview_started:
+        st.success("🟣 INTERVIEW MODE")
+
+        st.info(
+            "Your presentation has been captured and the knowledge base "
+            "is ready to build. Click below when you're ready to begin "
+            "the technical interview."
+        )
+
+        if st.button("🚀 Start Interview", use_container_width=True, type="primary"):
+            st.session_state.interview_started = True
+            st.rerun()
+
+        st.divider()
+
+        left, right = st.columns([1.25, 1])
+
+        with left:
+            st.subheader("🖥️ Presentation Context")
+
+            if st.session_state.latest_screen is not None:
+                st.image(st.session_state.latest_screen, use_container_width=True)
+            else:
+                st.info("No presentation screen captured.")
+
+            st.write("")
+
+            with st.expander("🔎 Retrieved Context", expanded=True):
+                st.markdown(
+                    """
+                    **Screen**
+
+                    • Project architecture
+
+                    • Model / technology information
+
+                    **Speech**
+
+                    • Student's explanation
+                    """
+                )
+
+        with right:
+            st.subheader("🤖 AI Interviewer")
+            st.info("Ready to generate your first question.")
+
+        st.divider()
+
+        st.subheader("📋 Interview Progress")
+
+        q1, q2, q3 = st.columns(3)
+
+        with q1:
+            st.metric("Questions", "0 / 3")
+
+        with q2:
+            st.metric("Difficulty", "Adaptive")
+
+        with q3:
+            st.metric("Questions Completed", "0 / 3")
+
+        st.stop()
+
     if not st.session_state.interview_prepared:
-        with st.spinner("🧠 Preparing your interview..."):
-            # Analyze final presentation screen ONCE
-            analysis = analyze_screen(st.session_state.latest_screen)
+        if st.session_state.get("interview_prep_started", False):
+            started_at = st.session_state.get("interview_prep_started_at", 0)
 
-            st.session_state.screen_analysis = analysis
+            if time.time() - started_at > 10:
+                # The previous attempt never finished within a
+                # reasonable time — treat it as dead and retry.
+                st.session_state.interview_prep_started = False
+                st.rerun()
 
-            # Build knowledge ONCE
-            build_knowledge()
+            st.info("🧠 Still preparing your interview, please wait…")
 
-            # Generate Question 1 ONCE
-            question = generate_question()
+            if st.button("Retry now"):
+                st.session_state.interview_prep_started = False
+                st.rerun()
 
-            if not question:
-                st.error("Could not generate Question 1.")
-                st.stop()
+            time.sleep(1)
+            st.rerun()
 
-            st.session_state.question_number = 1
-            st.session_state.question = question
-            st.session_state.question_audio = ""
+        st.session_state.interview_prep_started = True
+        st.session_state.interview_prep_started_at = time.time()
 
-            # TTS is optional
-            try:
-                tts_result = speak_question(question)
+        try:
+            with st.spinner("🧠 Preparing your interview..."):
+                # Analyze final presentation screen ONCE
+                analysis = analyze_screen(st.session_state.latest_screen)
 
-                if tts_result.get("success"):
-                    st.session_state.question_audio = tts_result.get("audio", "")
+                st.session_state.screen_analysis = analysis
 
-            except Exception as e:
-                print("TTS failed:", e)
+                # Build knowledge ONCE
+                build_knowledge()
 
-            st.session_state.interview_prepared = True
+                # Generate Question 1 ONCE
+                question = generate_question()
 
-    st.rerun()
+                if not question:
+                    st.error("Could not generate Question 1.")
+                    st.session_state.interview_prep_started = False
+                    st.stop()
+
+                st.session_state.question_number = 1
+                st.session_state.question = question
+                st.session_state.question_audio = ""
+
+                # TTS is optional
+                try:
+                    tts_result = speak_question(question)
+
+                    if tts_result.get("success"):
+                        st.session_state.question_audio = tts_result.get("audio", "")
+
+                except Exception as e:
+                    print("TTS failed:", e)
+
+                st.session_state.interview_prepared = True
+            st.rerun()
+
+        except Exception as e:
+            st.session_state.interview_prep_started = False
+            st.error(f"Interview preparation failed: {e}")
+            st.exception(e)
+            st.stop()
 
     # Question 1 is prepared before entering this stage, exactly once.
     if not st.session_state.question:
@@ -729,27 +825,28 @@ elif st.session_state.stage == "interviewing":
                 st.warning("Please speak your answer first.")
 
             else:
-                with st.spinner("🤖 Preparing the next interview step..."):
-                    # Save current question and answer
+                already_recorded = (
+                    len(st.session_state.interview_history)
+                    >= st.session_state.question_number
+                )
+
+                if not already_recorded:
                     st.session_state.interview_history.append(
                         {"question": st.session_state.question, "answer": answer}
                     )
 
-                    # =================================================
-                    # NEXT QUESTION OR FINAL EVALUATION
-                    # =================================================
+                # =================================================
+                # NEXT QUESTION OR FINAL EVALUATION
+                # =================================================
 
-                    if st.session_state.question_number < 3:
-                        # Move to next question
+                if st.session_state.question_number < 3:
+                    try:
                         with st.spinner("🤖 Generating next question..."):
                             next_question = generate_question()
 
                         if next_question:
                             st.session_state.question_number += 1
-
                             st.session_state.question = next_question
-
-                            # Generate audio for next question
                             st.session_state.question_audio = ""
 
                             try:
@@ -763,7 +860,6 @@ elif st.session_state.stage == "interviewing":
                             except Exception as e:
                                 print("TTS failed:", e)
 
-                            # Clear previous answer
                             st.session_state.answer_transcript = ""
                             st.session_state.last_answer_audio_hash = ""
 
@@ -772,26 +868,46 @@ elif st.session_state.stage == "interviewing":
                         else:
                             st.error("Could not generate next question.")
 
-                    else:
-                        # =================================================
-                        # ALL 3 QUESTIONS FINISHED
-                        # =================================================
+                    except Exception as e:
+                        st.error(f"Could not generate next question: {e}")
 
-                        if st.session_state.final_evaluation_started:
-                            st.stop()
+                else:
+                    # =============================================
+                    # ALL 3 QUESTIONS FINISHED — FINAL EVALUATION
+                    # =============================================
 
-                        st.session_state.final_evaluation_started = True
+                    if st.session_state.get("final_evaluation_started", False):
+                        started_at = st.session_state.get(
+                            "final_evaluation_started_at", 0
+                        )
 
-                        questions = [
-                            item["question"]
-                            for item in st.session_state.interview_history
-                        ]
+                        if time.time() - started_at > 20:
+                            st.session_state.final_evaluation_started = False
+                            st.rerun()
 
-                        answers = [
-                            item["answer"]
-                            for item in st.session_state.interview_history
-                        ]
+                        st.info(
+                            "🧠 Still preparing your final evaluation, please wait…"
+                        )
 
+                        if st.button("Retry evaluation now"):
+                            st.session_state.final_evaluation_started = False
+                            st.rerun()
+
+                        time.sleep(1)
+                        st.rerun()
+
+                    st.session_state.final_evaluation_started = True
+                    st.session_state.final_evaluation_started_at = time.time()
+
+                    questions = [
+                        item["question"] for item in st.session_state.interview_history
+                    ]
+
+                    answers = [
+                        item["answer"] for item in st.session_state.interview_history
+                    ]
+
+                    try:
                         with st.spinner(
                             "🧠 Preparing your final interview evaluation..."
                         ):
@@ -800,13 +916,15 @@ elif st.session_state.stage == "interviewing":
                         if result.get("success"):
                             st.session_state.final_evaluation = result
                             st.session_state.stage = "completed"
-
                             st.rerun()
 
                         else:
                             st.session_state.final_evaluation_started = False
-
                             st.error(result.get("error", "Final evaluation failed."))
+
+                    except Exception as e:
+                        st.session_state.final_evaluation_started = False
+                        st.error(f"Final evaluation failed: {e}")
     # ========================================================
     # INTERVIEW HISTORY
     # ========================================================
@@ -889,29 +1007,13 @@ elif st.session_state.stage == "completed":
     overall_score = final_score
 
     st.markdown(
-        f"""
-        <div style="
-            text-align:center;
-            padding:30px;
-            border-radius:15px;
-            background-color:#172235;
-            border:1px solid #334;
-        ">
-            <div style="
-                font-size:55px;
-                font-weight:bold;
-            ">
-                {overall_score:.1f} / 10
-            </div>
-
-            <div style="
-                color:#aaa;
-                margin-top:8px;
-            ">
-                Evidence-Grounded Technical Evaluation
-            </div>
-        </div>
-        """,
+        f'<div style="text-align:center;padding:30px;border-radius:15px;'
+        f'background-color:#172235;border:1px solid #334;">'
+        f'<div style="font-size:55px;font-weight:bold;">'
+        f"{overall_score:.1f} / 10</div>"
+        f'<div style="color:#aaa;margin-top:8px;">'
+        f"Evidence-Grounded Technical Evaluation</div>"
+        f"</div>",
         unsafe_allow_html=True,
     )
 

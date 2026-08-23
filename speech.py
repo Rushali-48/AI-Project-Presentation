@@ -189,9 +189,14 @@ export default function(component) {
                             );
 
 
-                        // Send only valid audio
+                        // Send only valid, non-trivial audio.
+                        // Very small blobs are almost always silence
+                        // or background noise, which is exactly what
+                        // causes Whisper to hallucinate stock phrases
+                        // like "thank you" or "next video" — so skip
+                        // sending them at all.
                         if (
-                            blob.size > 0
+                            blob.size > 8000
                         ) {
 
                             sendAudio(
@@ -256,7 +261,7 @@ export default function(component) {
                             }
 
                         },
-                        20000
+                        8000
                     );
 
             })

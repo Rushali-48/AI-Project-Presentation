@@ -8,9 +8,7 @@ from sentence_transformers import SentenceTransformer
 
 
 class PresentationRAG:
-    def __init__(
-        self, model_name="BAAI/bge-small-en-v1.5", db_path="presentation_vector_db"
-    ):
+    def __init__(self, model_name="all-MiniLM-L6-v2", db_path="presentation_vector_db"):
 
         self.model = SentenceTransformer(model_name)
 
@@ -150,3 +148,15 @@ class PresentationRAG:
         self.index = None
 
         self.documents = []
+
+        # Also wipe the persisted files, otherwise index.faiss and
+        # documents.json keep showing the previous session's data on
+        # disk even though in-memory state has been reset.
+        index_path = os.path.join(self.db_path, "index.faiss")
+        documents_path = os.path.join(self.db_path, "documents.json")
+
+        if os.path.exists(index_path):
+            os.remove(index_path)
+
+        if os.path.exists(documents_path):
+            os.remove(documents_path)
